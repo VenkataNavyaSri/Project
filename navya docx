@@ -1,0 +1,86 @@
+import fitz  # PyMuPDF
+from sentence_transformers import SentenceTransformer
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+import re
+
+
+class PDFQuestionAnswering:
+    def __init__(self):
+        # Initialize the embedding model
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+
+    def extract_text_from_pdf(self, pdf_path):
+        try:
+            doc = fitz.open(pdf_path)
+            text = ""
+            for page in doc:
+                text += page.get_text()
+            return text
+        except Exception as e:
+            print(f"Error reading PDF: {e}")
+            return None
+
+    def preprocess_text(self, text):
+        # Split text into sentences
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        # Remove empty sentences and clean whitespace
+        sentences = [s.strip() for s in sentences if s.strip()]
+        return sentences
+
+    def find_answer(self, question, sentences):
+        if not sentences:
+            return "Could not process the PDF content."
+
+        # Get embeddings for question and sentences
+        question_embedding = self.model.encode([question])[0]
+        sentence_embeddings = self.model.encode(sentences)
+
+        # Calculate similarities
+        similarities = cosine_similarity([question_embedding], sentence_embeddings)[0]
+
+        # Find the most relevant sentence
+        max_sim_idx = np.argmax(similarities)
+        max_similarity = similarities[max_sim_idx]
+
+        # If similarity is too low, consider it as no relevant answer found
+        if max_similarity < 0.3:
+            return "No such topic found in the PDF."
+
+        # Return the most relevant sentence as the answer
+        return sentences[max_sim_idx]
+
+
+def main():
+    qa_system = PDFQuestionAnswering()
+
+    # Get PDF path from user
+    pdf_path = input("Enter the path to your PDF file: ").strip()
+
+    # Extract text from PDF
+    text = qa_system.extract_text_from_pdf(pdf_path)
+    if text is None:
+        print("Failed to read the PDF. Please check the file path and try again.")
+        return
+
+    # Preprocess the text
+    sentences = qa_system.preprocess_text(text)
+
+    # Main interaction loop
+    while True:
+        question = input("\nEnter your question (or type 'quit' to exit): ").strip()
+
+        if question.lower() == 'quit':
+            break
+
+        if not question:
+            print("Please enter a valid question.")
+            continue
+
+        # Get answer
+        answer = qa_system.find_answer(question, sentences)
+        print("\nAnswer:", answer)
+
+
+if __name__ == "__main__":
+    main()
